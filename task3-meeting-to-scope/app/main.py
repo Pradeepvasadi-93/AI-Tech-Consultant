@@ -19,9 +19,24 @@ def root(): return {"service":"task3-meeting-to-scope","status":"ready","proposa
 @app.get("/health")
 def health(): return {"status":"ok","service":"task3-meeting-to-scope"}
 
-def build_or_fail(client,project,transcript):
-    try: return generate_package(client,project,transcript)
-    except Exception as e: raise HTTPException(status_code=502,detail=f"Generation failed: {type(e).__name__}: {e}")
+def build_or_fail(
+    client_name,
+    project_name,
+    transcript,
+    baseline_requirements=None,
+):
+    try:
+        return generate_package(
+            client_name,
+            project_name,
+            transcript,
+            baseline_requirements=baseline_requirements,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Generation failed: {type(e).__name__}: {e}",
+        )
 
 @app.post("/projects",status_code=201)
 def create(payload: ProjectCreate):
@@ -47,20 +62,77 @@ def approve(pid:str,payload:Approval):
     return {"project_id":pid,"approved_version":payload.version,"approved_by":payload.reviewer,"status":"approved","baseline_updated":True}
 
 @app.post("/projects/{pid}/meetings/follow-up")
-def followup(pid:str,payload:FollowUp):
-    p=db.project(pid)
-    if not p: raise HTTPException(404,"Project not found")
-    baseline,base_v=db.baseline(pid)
-    if not baseline: raise HTTPException(409,"Approve an initial scope before comparing a follow-up meeting")
-    package=build_or_fail(p["client_name"],p["project_name"],payload.transcript)
-    changes=compare_requirements(baseline.get("requirements",[]),package.get("requirements",[]))
-    package["change_report"]={"compared_against_approved_version":base_v,**changes,"requires_human_review":True,
-        "note":"This draft does not change the approved baseline until a reviewer approves it."}
-    new_v=max((x["version"] for x in db.versions(pid)),default=0)+1
-    db.save_version(pid,new_v,payload.meeting_id,payload.transcript,package)
-    db.audit(pid,"follow_up_compared","system",{"version":new_v,"baseline_version":base_v,"changes":changes})
-    return {"project_id":pid,"version":new_v,"status":"draft","requires_human_approval":True,
-        "compared_against_approved_version":base_v,"change_report":package["change_report"],"package":package}
+def followup(pid: str, payload: FollowUp):
+    p = db.project(pid)
+
+    if not p:
+        raise HTTPException(404, "Project not found")
+
+    baseline, base_v = db.baseline(pid)
+
+    if not baseline:
+        raise HTTPException(
+            409,
+            "Approve an initial scope before comparing a follow-up meeting",
+        )
+
+    # Pass approved requirements into the agent for merging.
+    package = build_or_fail(
+        p["client_name"],
+        p["project_name"],
+        payload.transcript,
+        baseline_requirements=baseline.get("requirements", []),
+    )
+
+    # Compare the complete merged scope with the approved baseline.
+    changes = compare_requirements(
+        baseline.get("requirements", []),
+        package.get("requirements", []),
+    )
+
+    package["change_report"] = {
+        "compared_against_approved_version": base_v,
+        **changes,
+        "requires_human_review": True,
+        "note": (
+            "This draft does not change the approved baseline "
+            "until a reviewer approves it."
+        ),
+    }
+
+    new_v = max(
+        (x["version"] for x in db.versions(pid)),
+        default=0,
+    ) + 1
+
+    db.save_version(
+        pid,
+        new_v,
+        payload.meeting_id,
+        payload.transcript,
+        package,
+    )
+
+    db.audit(
+        pid,
+        "follow_up_compared",
+        "system",
+        {
+            "version": new_v,
+            "baseline_version": base_v,
+            "changes": changes,
+        },
+    )
+
+    return {
+        "project_id": pid,
+        "version": new_v,
+        "status": "draft",
+        "requires_human_approval": True,
+        "compared_against_approved_version": base_v,
+        "change_report": package["change_report"],
+        "package": package,
+    }
 
 @app.post("/projects/{pid}/proposal/send")
 def send(pid:str,payload:SimulatedSend):

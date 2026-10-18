@@ -1,91 +1,129 @@
-import argparse, csv, json, time
+
+import json
+import sys
+import time
 from pathlib import Path
-import requests
 
-ROOT = Path(__file__).resolve().parent
-SAMPLE_A = ROOT.parent / "data" / "sample_transcripts" / "meeting_a.json"
+from evaluation.checks import evaluate_behavior
 
-def request_json(method, url, **kwargs):
-    response = requests.request(method, url, timeout=180, **kwargs)
-    response.raise_for_status()
-    return response.json()
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from app.agents import generate_package
+
+CASES_FILE = PROJECT_ROOT / "evaluation" / "cases.json"
+REPORT_FILE = PROJECT_ROOT / "evaluation" / "report.json"
+
+
+def evaluate_case(case):
+    case_id = case["case_id"]
+    start = time.perf_counter()
+
+    try:
+        package = generate_package(
+            client_name="Evaluation Client",
+            project_name=f"Evaluation {case_id}",
+            transcript=case["transcript"],
+        )
+
+        requirements = package.get("requirements", [])
+        questions = package.get("open_questions", [])
+
+        # Temporary structural check only.
+        # Semantic checks will be added in the next step.
+        result = evaluate_behavior(case, package)
+
+        return {
+            **result,
+            "category": case.get("category"),
+            "requirement_count": len(requirements)
+            if isinstance(requirements, list) else None,
+            "open_question_count": len(questions)
+            if isinstance(questions, list) else None,
+            "latency_seconds": round(time.perf_counter() - start, 2),
+            "error": None,
+        }
+
+    except Exception as exc:
+        message = str(exc)
+        is_rate_limit = (
+            "429" in message
+            or "rate limit" in message.lower()
+            or "ratelimit" in type(exc).__name__.lower()
+        )
+
+        return {
+            "case_id": case_id,
+            "category": case.get("category"),
+            "expected_behavior": case.get("expected_behavior"),
+            "status": "error",
+            "error_type": (
+                "rate_limit" if is_rate_limit
+                else type(exc).__name__
+            ),
+            "latency_seconds": round(time.perf_counter() - start, 2),
+            "error": message,
+        }
+
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--base-url", default="http://127.0.0.1:8003")
-    parser.add_argument("--cases", default=str(ROOT / "cases.json"))
-    parser.add_argument("--output", default=str(ROOT / "results.csv"))
-    args = parser.parse_args()
-    base = args.base_url.rstrip("/")
-    cases = json.loads(Path(args.cases).read_text(encoding="utf-8"))["cases"]
-    rows = []
-    for case in cases:
-        started = time.perf_counter()
-        row = {
-            "case_id": case["case_id"], "category": case["category"],
-            "expected_behavior": case["expected_behavior"], "http_status": "",
-            "actual_status": "", "requirements_count": "", "open_questions_count": "",
-            "estimates_count": "", "feasibility_unverified_count": "",
-            "proposal_generated": "", "change_added": "", "change_modified": "",
-            "change_removed": "", "latency_ms": "", "passed": "pending_manual_review",
-            "failure_reason": ""
-        }
-        try:
-            if case["category"] == "follow_up":
-                seed = json.loads(SAMPLE_A.read_text(encoding="utf-8"))
-                created = request_json("POST", base + "/projects", json={
-                    "client_name": seed["client_name"], "project_name": seed["project_name"],
-                    "transcript": case.get("baseline_transcript", seed["transcript"]), "meeting_id": "evaluation-baseline"
-                })
-                pid = created["project_id"]
-                request_json("POST", f"{base}/projects/{pid}/approve", json={
-                    "version": created["version"], "reviewer": "evaluation-runner",
-                    "notes": "Establish baseline for evaluation only"
-                })
-                result = request_json("POST", f"{base}/projects/{pid}/meetings/follow-up", json={
-                    "transcript": case["transcript"], "meeting_id": case["case_id"]
-                })
-                row["http_status"] = 200
-                package = result.get("package", {})
-                change = result.get("change_report", {})
-                row["actual_status"] = result.get("status", "unknown")
-                row["change_added"] = change.get("counts", {}).get("added", 0)
-                row["change_modified"] = change.get("counts", {}).get("modified", 0)
-                row["change_removed"] = change.get("counts", {}).get("removed", 0)
-            else:
-                result = request_json("POST", base + "/projects", json={
-                    "client_name": "Evaluation Client", "project_name": case["case_id"],
-                    "transcript": case["transcript"], "meeting_id": case["case_id"]
-                })
-                row["http_status"] = 201
-                package = result.get("package", {})
-                row["actual_status"] = result.get("status", "unknown")
-            row["requirements_count"] = len(package.get("requirements", []))
-            row["open_questions_count"] = len(package.get("open_questions", []))
-            row["estimates_count"] = len(package.get("estimates", []))
-            row["feasibility_unverified_count"] = sum(
-                1 for f in package.get("feasibility", []) if f.get("status") == "unverified"
+    with CASES_FILE.open("r", encoding="utf-8") as file:
+        cases = json.load(file)["cases"]
+
+    results = []
+
+    for index, case in enumerate(cases, start=1):
+        print(f"[{index}/{len(cases)}] Running {case['case_id']}...")
+        result = evaluate_case(case)
+        results.append(result)
+
+        print(
+            f"  Status: {result['status']}"
+            + (
+                f" ({result['error_type']})"
+                if result.get("error_type") else ""
             )
-            row["proposal_generated"] = bool(package.get("proposal_markdown"))
-        except Exception as exc:
-            row["actual_status"] = "request_failed"
-            row["passed"] = "no"
-            response = getattr(exc, "response", None)
-            row["http_status"] = response.status_code if response is not None else ""
-            row["failure_reason"] = (
-                f"HTTP {response.status_code}: {response.text[:500]}"
-                if response is not None else f"{type(exc).__name__}: {exc}"
-            )
-        row["latency_ms"] = round((time.perf_counter() - started) * 1000, 2)
-        rows.append(row)
-        print(f"{case['case_id']}: {row['actual_status']} ({row['latency_ms']} ms)")
-    output = Path(args.output)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    with output.open("w", newline="", encoding="utf-8") as file:
-        writer = csv.DictWriter(file, fieldnames=list(rows[0]))
-        writer.writeheader()
-        writer.writerows(rows)
-    print(f"Executed {len(rows)} evaluation cases; results saved to {output}")
-    print("passed remains pending_manual_review until each result is compared with expected_behavior.")
+        )
+
+        # Stop when quota is exhausted instead of wasting more calls.
+        if result.get("error_type") == "rate_limit":
+            print("Rate limit detected. Stopping this run.")
+            break
+
+    passed = sum(r["status"] == "passed" for r in results)
+    failed = sum(r["status"] == "failed" for r in results)
+    errors = sum(r["status"] == "error" for r in results)
+
+    report = {
+        "total_cases": len(cases),
+        "attempted": len(results),
+        "passed": passed,
+        "failed": failed,
+        "errors": errors,
+        "not_run": len(cases) - len(results),
+        "structural_pass_rate_percent": round(
+            passed / len(results) * 100, 2
+        ) if results else 0,
+        "results": results,
+        "note": (
+            "Structural checks only; this is not yet a semantic "
+            "evaluation of expected_behavior."
+        ),
+    }
+
+    with REPORT_FILE.open("w", encoding="utf-8") as file:
+        json.dump(report, file, indent=2)
+
+    print("\nEvaluation summary")
+    print("------------------")
+    print(f"Total cases: {len(cases)}")
+    print(f"Attempted:   {len(results)}")
+    print(f"Passed:      {passed}")
+    print(f"Failed:      {failed}")
+    print(f"Errors:      {errors}")
+    print(f"Not run:     {report['not_run']}")
+    print(f"Report:      {REPORT_FILE}")
+
+
 if __name__ == "__main__":
     main()

@@ -1,0 +1,123 @@
+{
+  "total_cases": 20,
+  "attempted": 10,
+  "passed": 7,
+  "failed": 0,
+  "errors": 3,
+  "not_run": 10,
+  "structural_pass_rate_percent": 70.0,
+  "results": [
+    {
+      "case_id": "SC-001",
+      "expected_behavior": "extract_requirements_and_open_questions",
+      "status": "passed",
+      "check_type": "heuristic_semantic",
+      "reason": "Expected output signals were found.",
+      "category": "initial_scope",
+      "requirement_count": 2,
+      "open_question_count": 4,
+      "latency_seconds": 11.39,
+      "error": null
+    },
+    {
+      "case_id": "SC-002",
+      "expected_behavior": "identify_ambiguity",
+      "status": "passed",
+      "check_type": "heuristic_semantic",
+      "reason": "Expected output signals were found.",
+      "category": "ambiguity",
+      "requirement_count": 1,
+      "open_question_count": 1,
+      "latency_seconds": 45.88,
+      "error": null
+    },
+    {
+      "case_id": "SC-003",
+      "category": "follow_up",
+      "expected_behavior": "flag_added_requirement",
+      "status": "error",
+      "error_type": "ValueError",
+      "latency_seconds": 81.21,
+      "error": "Proposal Agent did not return proposal_markdown."
+    },
+    {
+      "case_id": "SC-004",
+      "expected_behavior": "capture_security_requirement_and_questions",
+      "status": "passed",
+      "check_type": "heuristic_semantic",
+      "reason": "Expected output signals were found.",
+      "category": "security",
+      "requirement_count": 1,
+      "open_question_count": 3,
+      "latency_seconds": 52.17,
+      "error": null
+    },
+    {
+      "case_id": "SC-005",
+      "category": "acceptance",
+      "expected_behavior": "preserve_testable_criteria",
+      "status": "error",
+      "error_type": "ValueError",
+      "latency_seconds": 76.13,
+      "error": "Proposal Agent did not return proposal_markdown."
+    },
+    {
+      "case_id": "SC-006",
+      "expected_behavior": "record_exclusion",
+      "status": "passed",
+      "check_type": "heuristic_semantic",
+      "reason": "Expected output signals were found.",
+      "category": "exclusions",
+      "requirement_count": 1,
+      "open_question_count": 1,
+      "latency_seconds": 51.39,
+      "error": null
+    },
+    {
+      "case_id": "SC-007",
+      "expected_behavior": "produce_ranges_and_assumptions",
+      "status": "passed",
+      "check_type": "heuristic_semantic",
+      "reason": "Expected output signals were found.",
+      "category": "estimation",
+      "requirement_count": 1,
+      "open_question_count": 5,
+      "latency_seconds": 66.46,
+      "error": null
+    },
+    {
+      "case_id": "SC-008",
+      "expected_behavior": "check_task1_and_mark_unverified_without_evidence",
+      "status": "passed",
+      "check_type": "heuristic_semantic",
+      "reason": "Expected output signals were found.",
+      "category": "feasibility",
+      "requirement_count": 1,
+      "open_question_count": 1,
+      "latency_seconds": 47.06,
+      "error": null
+    },
+    {
+      "case_id": "SC-009",
+      "expected_behavior": "detect_removed_requirement",
+      "status": "passed",
+      "check_type": "heuristic_semantic",
+      "reason": "Expected output signals were found.",
+      "category": "follow_up",
+      "requirement_count": 2,
+      "open_question_count": 2,
+      "latency_seconds": 61.35,
+      "error": null
+    },
+    {
+      "case_id": "SC-010",
+      "category": "follow_up",
+      "expected_behavior": "detect_modified_requirement",
+      "status": "error",
+      "error_type": "rate_limit",
+      "latency_seconds": 51.48,
+      "error": "Error code: 429 - {'error': {'message': 'Rate limit reached for model `openai/gpt-oss-20b` in organization `org_01kr60kknqegjsq0vwzxhh5568` service tier `on_demand` on tokens per minute (TPM): Limit 8000, Used 4708, Requested 3425. Please try again in 997.5ms. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing', 'type': 'tokens', 'code': 'rate_limit_exceeded'}}"
+    }
+  ],
+  "note": "Structural checks only; this is not yet a semantic evaluation of expected_behavior."
+}

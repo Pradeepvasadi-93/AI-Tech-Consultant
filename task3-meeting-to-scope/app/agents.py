@@ -1,5 +1,6 @@
 """LangGraph orchestration for Task 3. Each node is a distinct, auditable agent role."""
 import json
+import re
 from typing import Any, TypedDict
 
 import requests
@@ -17,6 +18,7 @@ class ScopeState(TypedDict, total=False):
     client_name: str
     project_name: str
     transcript: str
+    baseline_requirements: list[dict[str, Any]]
     analysis: dict[str, Any]
     feasibility: list[dict[str, Any]]
     scope: dict[str, Any]
@@ -153,6 +155,117 @@ TRANSCRIPT SECTION:
         "assumptions": unique(assumptions), "client_commitments": unique(commitments),
         "transcript_chunks": len(chunks)
     }}
+
+
+def _normalise_title(value: Any) -> str:
+    """Normalize titles for conservative, deterministic matching."""
+    return " ".join(str(value or "").casefold().split())
+
+
+def _merge_baseline_requirements(state: ScopeState) -> dict:
+    """
+    Preserve approved requirements when processing a follow-up transcript.
+
+    Conservative rule: only an exact normalized title match is treated as the
+    same requirement. Unmatched follow-up requirements are added with new IDs.
+    Requirements are never silently removed. This avoids a short follow-up
+    transcript replacing the full approved scope.
+    """
+    analysis = dict(state.get("analysis", {}))
+    baseline = [
+        dict(item) for item in state.get("baseline_requirements", [])
+        if isinstance(item, dict)
+    ]
+    extracted = [
+        dict(item) for item in analysis.get("requirements", [])
+        if isinstance(item, dict)
+    ]
+
+    if not baseline:
+        # Initial meeting: keep the transcript analyst's extracted requirements.
+        return {"analysis": analysis}
+
+    merged = [dict(item) for item in baseline]
+    title_to_index = {
+        _normalise_title(item.get("title")): index
+        for index, item in enumerate(merged)
+        if _normalise_title(item.get("title"))
+    }
+
+    used_ids = {
+        str(item.get("id", ""))
+        for item in merged
+        if item.get("id")
+    }
+    max_id = 0
+    for rid in used_ids:
+        match = re.fullmatch(r"REQ-(\d+)", rid)
+        if match:
+            max_id = max(max_id, int(match.group(1)))
+
+    added_count = 0
+    modified_count = 0
+    for item in extracted:
+        title_key = _normalise_title(item.get("title"))
+        if not title_key:
+            # Do not silently discard an extracted item with a missing title.
+            title_key = f"untitled-follow-up-{added_count + 1}"
+
+        matched_index = title_to_index.get(title_key)
+        if matched_index is not None:
+            # Same title: update cautiously while retaining baseline ID and
+            # keeping existing acceptance criteria/dependencies if omitted.
+            previous = merged[matched_index]
+            updated = dict(previous)
+            for key, value in item.items():
+                if key == "id" or value in (None, "", [], {}):
+                    continue
+                if key == "priority" and value == "unknown" and previous.get("priority") not in (None, "", "unknown"):
+                    continue
+                if key == "acceptance_criteria" and isinstance(value, list):
+                    # Keep existing criteria and add only genuinely new criteria.
+                    updated[key] = list(dict.fromkeys(
+                        list(previous.get(key, [])) + value
+                    ))
+                    continue
+                if key == "dependencies" and isinstance(value, list):
+                    updated[key] = list(dict.fromkeys(
+                        list(previous.get(key, [])) + value
+                    ))
+                    continue
+                updated[key] = value
+            updated["id"] = previous.get("id", f"REQ-{matched_index + 1:03d}")
+            merged[matched_index] = updated
+            modified_count += 1
+            continue
+
+        # New title: allocate an ID that cannot collide with baseline IDs or
+        # the temporary IDs generated from the follow-up transcript.
+        max_id += 1
+        new_item = dict(item)
+        new_item["id"] = f"REQ-{max_id:03d}"
+        while new_item["id"] in used_ids:
+            max_id += 1
+            new_item["id"] = f"REQ-{max_id:03d}"
+        used_ids.add(new_item["id"])
+        title_to_index[title_key] = len(merged)
+        merged.append(new_item)
+        added_count += 1
+
+    analysis["requirements"] = merged
+    analysis["follow_up_merge"] = {
+        "baseline_requirement_count": len(baseline),
+        "follow_up_extracted_count": len(extracted),
+        "merged_requirement_count": len(merged),
+        "new_requirement_count": added_count,
+        "same_title_matches": modified_count,
+        "automatic_removals": 0,
+        "note": (
+            "Unchanged baseline requirements are preserved. Requirements are "
+            "not automatically removed; explicit removals require review."
+        ),
+    }
+    return {"analysis": analysis}
 
 
 def _query_task1(question: str) -> dict:
@@ -404,12 +517,14 @@ def _traced_node(node_name, node_fn):
 def build_scope_graph():
     graph = StateGraph(ScopeState)
     graph.add_node("transcript_analyst", _traced_node("transcript_analyst", _transcript_analyst))
+    graph.add_node("merge_baseline_requirements", _traced_node("merge_baseline_requirements", _merge_baseline_requirements))
     graph.add_node("product_feasibility", _traced_node("product_feasibility", _product_feasibility))
     graph.add_node("scope_agent", _traced_node("scope_agent", _scope_agent))
     graph.add_node("estimation_agent", _traced_node("estimation_agent", _estimation_agent))
     graph.add_node("proposal_review_agent", _traced_node("proposal_review_agent", _proposal_review_agent))
     graph.add_edge(START, "transcript_analyst")
-    graph.add_edge("transcript_analyst", "product_feasibility")
+    graph.add_edge("transcript_analyst", "merge_baseline_requirements")
+    graph.add_edge("merge_baseline_requirements", "product_feasibility")
     graph.add_edge("product_feasibility", "scope_agent")
     graph.add_edge("scope_agent", "estimation_agent")
     graph.add_edge("estimation_agent", "proposal_review_agent")
@@ -419,7 +534,12 @@ def build_scope_graph():
 
 _SCOPE_GRAPH = None
 
-def generate_package(client_name: str, project_name: str, transcript: str) -> dict[str, Any]:
+def generate_package(
+    client_name: str,
+    project_name: str,
+    transcript: str,
+    baseline_requirements: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     global _SCOPE_GRAPH
     with logfire.span(
         "meeting_to_scope.generate_package",
@@ -433,6 +553,7 @@ def generate_package(client_name: str, project_name: str, transcript: str) -> di
                 "client_name": client_name,
                 "project_name": project_name,
                 "transcript": transcript,
+                "baseline_requirements": baseline_requirements or [],
                 "errors": []
             })
             package = result["package"]
@@ -447,7 +568,7 @@ def generate_package(client_name: str, project_name: str, transcript: str) -> di
 
 
 def compare_requirements(old, new):
-    """Compare requirements against the approved baseline, using IDs first and title fallback."""
+    """Compare requirements against the approved baseline. Pass merged requirements with stable IDs."""
     def norm(item):
         return json.dumps({k: v for k, v in item.items() if k != "source_excerpt"},
                           sort_keys=True, ensure_ascii=False)
