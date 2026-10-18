@@ -1,5 +1,6 @@
-
 """Grounded question answering over retrieved Knowledge Brain evidence."""
+
+import logging
 import os
 import uuid
 from typing import Any
@@ -7,15 +8,23 @@ from typing import Any
 from groq import Groq
 
 from app.config import settings
-from services.qdrant_service import get_qdrant_client, search_enterprise_knowledge
+from services.qdrant_service import (
+    get_qdrant_client,
+    search_enterprise_knowledge,
+)
 from services.embedder import embed_query
+
+logger = logging.getLogger(__name__)
 
 
 def answer_question(question: str, top_k: int = 6) -> dict[str, Any]:
     """Retrieve evidence and ask Groq to answer only from that evidence."""
+
+    # 1. Retrieve relevant knowledge.
     results = search_enterprise_knowledge(question, limit=top_k)
 
     min_score = float(os.getenv("MIN_RETRIEVAL_SCORE", "0.35"))
+
     evidence = [
         result
         for result in results
@@ -24,6 +33,7 @@ def answer_question(question: str, top_k: int = 6) -> dict[str, Any]:
         and result.get("score", 0.0) >= min_score
     ]
 
+    # 2. Do not call the LLM when there is no usable evidence.
     if not evidence:
         return {
             "answer": (
@@ -37,7 +47,7 @@ def answer_question(question: str, top_k: int = 6) -> dict[str, Any]:
             "evidence": results[:top_k],
         }
 
-    # Groq configuration
+    # 3. Configure Groq.
     api_key = os.getenv("GROQ_API_KEY")
     model = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
 
@@ -46,6 +56,7 @@ def answer_question(question: str, top_k: int = 6) -> dict[str, Any]:
 
     client = Groq(api_key=api_key)
 
+    # 4. Build evidence blocks and source references.
     evidence_blocks = []
     source_map = []
 
@@ -75,40 +86,113 @@ def answer_question(question: str, top_k: int = 6) -> dict[str, Any]:
         "[Source N] markers. Be concise and preserve uncertainty."
     )
 
-    response = client.chat.completions.create(
-        model=model,
-        messages=[
-            {
-                "role": "system",
-                "content": system_prompt,
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"Question: {question}\n\n"
-                    "Retrieved evidence follows:\n\n"
-                    + "\n\n---\n\n".join(evidence_blocks)
-                ),
-            },
-        ],
-        max_tokens=900,
-        temperature=0.2,
+    user_prompt = (
+        f"Question: {question}\n\n"
+        "Retrieved evidence follows:\n\n"
+        + "\n\n---\n\n".join(evidence_blocks)
     )
 
-    answer = (
-        response.choices[0].message.content or ""
-    ).strip()
+    # 5. Call Groq. Retry once only when the response has empty content.
+    response = None
+    answer = ""
+    empty_response_details = {}
 
-    # Groq reports prompt_tokens and completion_tokens.
+    for attempt in range(2):
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": system_prompt,
+                    },
+                    {
+                        "role": "user",
+                        "content": user_prompt,
+                    },
+                ],
+                max_tokens=1200,
+                temperature=0.2,
+            )
+
+        except Exception:
+            logger.exception(
+                "Groq request failed: model=%s attempt=%s",
+                model,
+                attempt + 1,
+            )
+            # Do not disguise network, authentication, rate-limit,
+            # or provider errors as successful answers.
+            raise
+
+        choices = response.choices or []
+        message = choices[0].message if choices else None
+
+        answer = (
+            (message.content or "").strip()
+            if message is not None
+            else ""
+        )
+
+        if answer:
+            break
+
+        finish_reason = (
+            choices[0].finish_reason
+            if choices
+            else None
+        )
+        refusal = (
+            getattr(message, "refusal", None)
+            if message is not None
+            else None
+        )
+
+        empty_response_details = {
+            "finish_reason": finish_reason,
+            "refusal_present": bool(refusal),
+        }
+
+        logger.warning(
+            "Groq returned empty content: model=%s attempt=%s "
+            "finish_reason=%s refusal_present=%s",
+            model,
+            attempt + 1,
+            finish_reason,
+            bool(refusal),
+        )
+
+        # An explicit refusal should be reviewed, not retried blindly.
+        if refusal:
+            answer = (
+                "NEEDS_HUMAN: The model declined to answer. "
+                "A human should review the question and retrieved evidence."
+            )
+            break
+
+        if attempt == 0:
+            continue
+
+        # Both attempts returned empty content.
+        answer = (
+            "NEEDS_HUMAN: The model returned an empty answer after "
+            "one retry. Please review the retrieved evidence manually."
+        )
+
+    # 6. Collect token usage from the latest response.
     response_usage = getattr(response, "usage", None)
 
     usage = {
-        "input_tokens": getattr(response_usage, "prompt_tokens", None),
-        "output_tokens": getattr(response_usage, "completion_tokens", None),
+        "input_tokens": getattr(
+            response_usage, "prompt_tokens", None
+        ),
+        "output_tokens": getattr(
+            response_usage, "completion_tokens", None
+        ),
     }
 
-    # Optional cost estimates. Set these rates according to your
-    # selected Groq model's current pricing, in USD per million tokens.
+    # 7. Optional cost estimate.
+    # Configure rates in USD per million tokens for the selected model.
     input_rate = os.getenv("GROQ_INPUT_COST_PER_MTOK")
     output_rate = os.getenv("GROQ_OUTPUT_COST_PER_MTOK")
 
@@ -120,15 +204,18 @@ def answer_question(question: str, top_k: int = 6) -> dict[str, Any]:
         and input_rate is not None
         and output_rate is not None
     ):
-        estimated_cost_usd = (
-            usage["input_tokens"] * float(input_rate)
-            + usage["output_tokens"] * float(output_rate)
-        ) / 1_000_000
+        try:
+            estimated_cost_usd = (
+                usage["input_tokens"] * float(input_rate)
+                + usage["output_tokens"] * float(output_rate)
+            ) / 1_000_000
+        except ValueError:
+            logger.warning(
+                "Invalid Groq token cost configuration; "
+                "estimated cost omitted."
+            )
 
-    if not answer:
-        raise RuntimeError("Groq returned an empty answer")
-
-    # Include only unique source URLs in the public API response.
+    # 8. Include unique source URLs in the public API response.
     sources = []
     seen = set()
 
@@ -150,12 +237,13 @@ def answer_question(question: str, top_k: int = 6) -> dict[str, Any]:
             }
         )
 
+    # 9. Detect whether human review is required.
     needs_human = answer.startswith("NEEDS_HUMAN:")
 
     if needs_human:
         answer = answer[len("NEEDS_HUMAN:"):].strip()
 
-    return {
+    result = {
         "answer": answer,
         "status": "needs_human" if needs_human else "answered",
         "sources": sources,
@@ -166,9 +254,14 @@ def answer_question(question: str, top_k: int = 6) -> dict[str, Any]:
         "evidence": evidence,
     }
 
+    if empty_response_details:
+        result["diagnostics"] = empty_response_details
+
+    return result
+
 
 def index_approved_answer(escalation: dict) -> None:
-    """Index a human-approved answer so it can be retrieved in future queries."""
+    """Index a human-approved answer for future retrieval."""
     from qdrant_client.http import models
 
     answer = (escalation.get("expert_answer") or "").strip()
@@ -183,7 +276,8 @@ def index_approved_answer(escalation: dict) -> None:
     payload = {
         "chunk_id": chunk_id,
         "source_url": (
-            escalation.get("answer_sources") or ["human://approved-knowledge"]
+            escalation.get("answer_sources")
+            or ["human://approved-knowledge"]
         )[0],
         "title": "Human-approved support answer",
         "text": answer,
