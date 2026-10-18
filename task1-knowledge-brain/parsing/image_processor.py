@@ -16,7 +16,17 @@ MODEL_NAME = os.getenv("OPENAI_VISION_MODEL", "gpt-4.1")
 MAX_IMAGE_BYTES = 10 * 1024 * 1024  # 10 MB
 REQUEST_TIMEOUT = 20
 
-client = OpenAI()
+client = None
+
+
+def _get_openai_client():
+    """Create the vision client only when image processing is requested."""
+    global client
+    if client is None:
+        if not os.getenv("OPENAI_API_KEY"):
+            raise RuntimeError("OPENAI_API_KEY is required for image descriptions")
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    return client
 
 
 def download_image(url: str) -> str:
@@ -129,7 +139,7 @@ def describe_image(image_path: str) -> str:
             encoded_image = base64.b64encode(image_bytes).decode("utf-8")
             image_data_url = f"data:{mime_type};base64,{encoded_image}"
 
-            response = client.chat.completions.create(
+            response = _get_openai_client().chat.completions.create(
                 model=MODEL_NAME,
                 messages=[
                     {

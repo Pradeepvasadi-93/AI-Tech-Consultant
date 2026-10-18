@@ -1,41 +1,50 @@
-import logfire
+"""Qdrant retrieval helpers used by the API and downstream agents."""
+from functools import lru_cache
+
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
+
 from app.config import settings
-from embedder import embed_query
+from services.embedder import embed_query
 
 
-# Initialize Qdrant Client
-client = QdrantClient(
-    url=settings.QDRANT_URI,
-    api_key=settings.QDRANT_API_KEY
-)
+@lru_cache(maxsize=1)
+def get_qdrant_client() -> QdrantClient:
+    if not settings.QDRANT_URI or not settings.QDRANT_API_KEY:
+        raise RuntimeError("QDRANT_URI and QDRANT_API_KEY must be configured")
+    return QdrantClient(
+        url=settings.QDRANT_URI,
+        api_key=settings.QDRANT_API_KEY,
+        timeout=30,
+    )
 
-def search_enterprise_knowledge(query: str, limit: int = 8):
-    """
-    Performs a high-precision search in the enterprise knowledge base.
-    Uses the modern query_points interface.
-    """
-    try:
-        query_vector = embed_query(query)
 
-        # Using query_points - the modern standard for Qdrant
-        response = client.query_points(
-            collection_name=settings.QDRANT_COLLECTION,
-            query=query_vector,
-            limit=limit,
-            with_payload=True # JSON
-        )
+def search_enterprise_knowledge(query: str, limit: int = 8) -> list[dict]:
+    """Return ranked text/image evidence with stable source metadata."""
+    if not query or not query.strip():
+        raise ValueError("query must be non-empty")
+    if limit < 1 or limit > 50:
+        raise ValueError("limit must be between 1 and 50")
 
-        results = []
-        for res in response.points:
-            results.append({
-                "content": res.payload.get("text", ""),
-                "source": res.payload.get("source", "Unknown"),
-                "score": res.score
-            })
-        
-        return results
-    except Exception as e:
-        logfire.error(f"❌ Qdrant Search Failed: {e}")
-        return []
+    vector = embed_query(query)
+    response = get_qdrant_client().query_points(
+        collection_name=settings.QDRANT_COLLECTION,
+        query=vector,
+        limit=limit,
+        with_payload=True,
+    )
+
+    results = []
+    for point in response.points:
+        payload = point.payload or {}
+        source_url = payload.get("source_url") or payload.get("url")
+        results.append({
+            "chunk_id": payload.get("chunk_id"),
+            "content": payload.get("text", ""),
+            "title": payload.get("title", ""),
+            "source_url": source_url,
+            "image_url": payload.get("image_url"),
+            "content_type": payload.get("content_type", "text"),
+            "score": float(point.score),
+        })
+    return results

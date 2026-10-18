@@ -1,0 +1,21 @@
+case_id,subject,expected_category,actual_category,pass,latency_ms
+eval_001,How do I change my website logo?,how_to,how_to,True,0.0696
+eval_002,Checkout is failing,troubleshooting,troubleshooting,True,0.0272
+eval_003,Change website settings,how_to,how_to,True,0.0279
+eval_004,Update contact information,how_to,how_to,True,0.0297
+eval_005,Website returns an error,troubleshooting,troubleshooting,True,0.0235
+eval_006,Payment integration stopped working,troubleshooting,troubleshooting,True,0.0245
+eval_007,Request a booking feature,project_request,project_request,True,0.0207
+eval_008,Add a customer dashboard,project_request,project_request,True,0.0152
+eval_009,Integrate an external calendar,project_request,project_request,True,0.0172
+eval_010,Cancel subscription and request refund,refund_cancellation,refund_cancellation,True,0.0082
+eval_011,Refund for last invoice,refund_cancellation,refund_cancellation,True,0.0094
+eval_012,Please cancel my plan,refund_cancellation,refund_cancellation,True,0.0087
+eval_013,Disappointed with customer support,complaint,complaint,True,0.0114
+eval_014,Website broke after an update,complaint,complaint,True,0.0118
+eval_015,Formal complaint about service,complaint,complaint,True,0.0095
+eval_016,Quote for website customization,quote_request,quote_request,True,0.0109
+eval_017,Estimate for website redesign,quote_request,quote_request,True,0.0151
+eval_018,Pricing for custom integration,quote_request,quote_request,True,0.0124
+eval_019,Following up on support request,follow_up,follow_up,True,0.025
+eval_020,Checking status of my request,follow_up,follow_up,True,0.0261

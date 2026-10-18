@@ -1,0 +1,6 @@
+{
+  "meeting_id": "meeting-a",
+  "client_name": "Northstar Retail",
+  "project_name": "Product Search Improvement",
+  "transcript": "Our store has about 8,000 products. Customers say search is hard to use. We need search by product name and category filters on desktop and mobile. Results should appear within two seconds under normal load. We have not decided whether AI means natural-language search or recommendations. Budget and launch date are not confirmed. The client will provide sample product data and staging access. We are not requesting a new payment gateway in this phase."
+}

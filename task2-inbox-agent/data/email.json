@@ -1,0 +1,83 @@
+
+[
+  {
+    "id": "email_001",
+    "sender": "customer1@example.com",
+    "subject": "How do I configure my website?",
+    "body": "Please explain how to configure the main settings for my website.",
+    "conversation_context": "",
+    "expected_category": "how_to"
+  },
+  {
+    "id": "email_002",
+    "sender": "customer2@example.com",
+    "subject": "Website page is not loading",
+    "body": "My website page keeps showing an error and I cannot access it. How can I troubleshoot this?",
+    "conversation_context": "",
+    "expected_category": "troubleshooting"
+  },
+  {
+    "id": "email_003",
+    "sender": "customer3@example.com",
+    "subject": "Request for a new website",
+    "body": "We need a website for our business with five pages and a contact form. Please explain the next steps.",
+    "conversation_context": "",
+    "expected_category": "project_request"
+  },
+  {
+    "id": "email_004",
+    "sender": "customer4@example.com",
+    "subject": "Request for cancellation and refund",
+    "body": "I would like to cancel my subscription and know whether I am eligible for a refund.",
+    "conversation_context": "",
+    "expected_category": "refund_cancellation"
+  },
+  {
+    "id": "email_005",
+    "sender": "customer5@example.com",
+    "subject": "Unhappy with the support received",
+    "body": "I contacted support several times but my problem has not been resolved. I am disappointed with the service.",
+    "conversation_context": "",
+    "expected_category": "complaint"
+  },
+  {
+    "id": "email_006",
+    "sender": "customer6@example.com",
+    "subject": "Request for project quotation",
+    "body": "Could you provide a quotation for building a business website? Please explain the pricing options.",
+    "conversation_context": "",
+    "expected_category": "quote_request"
+  },
+  {
+    "id": "email_007",
+    "sender": "customer7@example.com",
+    "subject": "Following up on my previous request",
+    "body": "I am following up on my earlier email. Could you please let me know if there is an update?",
+    "conversation_context": "The customer previously asked for an update on a support request.",
+    "expected_category": "follow_up"
+  },
+  {
+    "id": "email_008",
+    "sender": "customer8@example.com",
+    "subject": "Urgent: website is unavailable",
+    "body": "Our business website is unavailable and customers cannot access it. Please help us resolve this urgently.",
+    "conversation_context": "",
+    "expected_category": "troubleshooting"
+  },
+  {
+    "id": "email_009",
+    "sender": "customer9@example.com",
+    "subject": "Can you confirm your refund policy?",
+    "body": "Before I decide whether to cancel, please explain the applicable refund policy and any conditions.",
+    "conversation_context": "",
+    "expected_category": "refund_cancellation"
+  },
+  {
+    "id": "email_010",
+    "sender": "customer10@example.com",
+    "subject": "Need help with an existing configuration",
+    "body": "I followed the configuration instructions but one of the settings is not behaving as expected. Could you guide me?",
+    "conversation_context": "The customer has already attempted the documented configuration steps.",
+    "expected_category": "troubleshooting"
+  }
+]

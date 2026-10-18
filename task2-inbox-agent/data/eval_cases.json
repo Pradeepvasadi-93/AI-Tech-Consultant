@@ -1,0 +1,163 @@
+
+[
+  {
+    "id": "eval_001",
+    "sender": "customer1@example.com",
+    "subject": "How do I change my website logo?",
+    "body": "Please explain how to update the logo displayed on my website.",
+    "conversation_context": "",
+    "expected_category": "how_to"
+  },
+  {
+    "id": "eval_002",
+    "sender": "customer2@example.com",
+    "subject": "Checkout is failing",
+    "body": "Customers cannot complete checkout because the page shows an error.",
+    "conversation_context": "",
+    "expected_category": "troubleshooting"
+  },
+  {
+    "id": "eval_003",
+    "sender": "customer3@example.com",
+    "subject": "Change website settings",
+    "body": "How can I change the general settings for my website?",
+    "conversation_context": "",
+    "expected_category": "how_to"
+  },
+  {
+    "id": "eval_004",
+    "sender": "customer4@example.com",
+    "subject": "Update contact information",
+    "body": "Please guide me through updating the contact information displayed on my website.",
+    "conversation_context": "",
+    "expected_category": "how_to"
+  },
+  {
+    "id": "eval_005",
+    "sender": "customer5@example.com",
+    "subject": "Website returns an error",
+    "body": "My website returns a server error whenever I open an important page. How can I troubleshoot it?",
+    "conversation_context": "",
+    "expected_category": "troubleshooting"
+  },
+  {
+    "id": "eval_006",
+    "sender": "customer6@example.com",
+    "subject": "Payment integration stopped working",
+    "body": "Our payment integration stopped working after yesterday's update. Please help us investigate.",
+    "conversation_context": "",
+    "expected_category": "troubleshooting"
+  },
+  {
+    "id": "eval_007",
+    "sender": "customer7@example.com",
+    "subject": "Request a booking feature",
+    "body": "We want to add an online booking feature to our existing website. Please explain how to start this project.",
+    "conversation_context": "",
+    "expected_category": "project_request"
+  },
+  {
+    "id": "eval_008",
+    "sender": "customer8@example.com",
+    "subject": "Add a customer dashboard",
+    "body": "Can your team build a customer dashboard showing account activity and reports?",
+    "conversation_context": "",
+    "expected_category": "project_request"
+  },
+  {
+    "id": "eval_009",
+    "sender": "customer9@example.com",
+    "subject": "Integrate an external calendar",
+    "body": "We need a new calendar integration so customers can book appointments from our website.",
+    "conversation_context": "",
+    "expected_category": "project_request"
+  },
+  {
+    "id": "eval_010",
+    "sender": "customer10@example.com",
+    "subject": "Cancel subscription and request refund",
+    "body": "I want to cancel my subscription and ask whether I qualify for a refund.",
+    "conversation_context": "",
+    "expected_category": "refund_cancellation"
+  },
+  {
+    "id": "eval_011",
+    "sender": "customer11@example.com",
+    "subject": "Refund for last invoice",
+    "body": "Please review my last invoice and explain the process for requesting a refund.",
+    "conversation_context": "",
+    "expected_category": "refund_cancellation"
+  },
+  {
+    "id": "eval_012",
+    "sender": "customer12@example.com",
+    "subject": "Please cancel my plan",
+    "body": "I no longer need this service. Please explain how I can cancel my current plan.",
+    "conversation_context": "",
+    "expected_category": "refund_cancellation"
+  },
+  {
+    "id": "eval_013",
+    "sender": "customer13@example.com",
+    "subject": "Disappointed with customer support",
+    "body": "I contacted support several times but nobody resolved my problem. I am unhappy with this service.",
+    "conversation_context": "",
+    "expected_category": "complaint"
+  },
+  {
+    "id": "eval_014",
+    "sender": "customer14@example.com",
+    "subject": "Website broke after an update",
+    "body": "The latest update broke our website, and we are frustrated that this issue remains unresolved.",
+    "conversation_context": "",
+    "expected_category": "complaint"
+  },
+  {
+    "id": "eval_015",
+    "sender": "customer15@example.com",
+    "subject": "Formal complaint about service",
+    "body": "I am submitting a complaint about repeated service interruptions and the lack of communication.",
+    "conversation_context": "",
+    "expected_category": "complaint"
+  },
+  {
+    "id": "eval_016",
+    "sender": "customer16@example.com",
+    "subject": "Quote for website customization",
+    "body": "Could you provide a quotation for customizing our business website?",
+    "conversation_context": "",
+    "expected_category": "quote_request"
+  },
+  {
+    "id": "eval_017",
+    "sender": "customer17@example.com",
+    "subject": "Estimate for website redesign",
+    "body": "We are considering a website redesign. Please share an estimate and explain which details you need from us.",
+    "conversation_context": "",
+    "expected_category": "quote_request"
+  },
+  {
+    "id": "eval_018",
+    "sender": "customer18@example.com",
+    "subject": "Pricing for custom integration",
+    "body": "How much would a custom integration cost? We need a quotation before deciding whether to proceed.",
+    "conversation_context": "",
+    "expected_category": "quote_request"
+  },
+  {
+    "id": "eval_019",
+    "sender": "customer19@example.com",
+    "subject": "Following up on support request",
+    "body": "I am following up on my previous support request. Is there any update?",
+    "conversation_context": "The customer previously reported a support issue.",
+    "expected_category": "follow_up"
+  },
+  {
+    "id": "eval_020",
+    "sender": "customer20@example.com",
+    "subject": "Checking status of my request",
+    "body": "Could you please let me know the status of the request I sent earlier?",
+    "conversation_context": "The customer sent an earlier request and is waiting for a response.",
+    "expected_category": "follow_up"
+  }
+]

@@ -12,14 +12,14 @@ import logfire
 from qdrant_client import QdrantClient, models
 
 from app.config import settings
-from parsing.sitemap_parser import parse_sitemap
+from parsing.sitemap_parser import parse_sitemap, parse_sitemap_entries
 from ingestion.crawler import crawl_articles
 from chunking.chunker import chunk_document
 from services.embedder import embed_texts, get_embedding_dim
 
 
-QDRANT_URI = os.getenv("QDRANT_URI")
-QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
+QDRANT_URI = settings.QDRANT_URI
+QDRANT_API_KEY = settings.QDRANT_API_KEY
 
 # ---------------------------------------------------------
 # Configuration
@@ -37,6 +37,7 @@ POINT_NAMESPACE = uuid.UUID(
 )
 
 logfire.configure(service_name="knowledge-brain-ingestion")
+LAST_CRAWL_STATS: dict[str, int] = {}
 
 
 # ---------------------------------------------------------
@@ -148,8 +149,6 @@ def load_json_document(path: Path) -> dict[str, Any]:
 
 def get_qdrant_client() -> QdrantClient:
     """Create a Qdrant Cloud client using the project's settings."""
-    print(QDRANT_URI)
-    print(QDRANT_API_KEY)
     if not QDRANT_URI:
         raise ValueError("QDRANT_URI is not configured")
 
@@ -222,6 +221,22 @@ def ensure_collection(
             f"Collection '{collection}' does not use cosine distance."
         )
 
+def ensure_payload_indexes(client: QdrantClient) -> None:
+    """Create the payload indexes required by Qdrant filters."""
+    collection_name = settings.QDRANT_COLLECTION
+
+    client.create_payload_index(
+        collection_name=collection_name,
+        field_name="source_url",
+        field_schema=models.PayloadSchemaType.KEYWORD,
+        wait=True,
+    )
+
+    logfire.info(
+        "Qdrant payload index created or verified",
+        collection=collection_name,
+        field="source_url",
+    )
 
 def upsert_points(
     client: QdrantClient,
@@ -240,6 +255,94 @@ def upsert_points(
         )
 
     return len(points)
+
+
+def remove_stale_chunks_for_url(
+    client: QdrantClient,
+    source_url: str,
+    active_point_ids: set[str],
+) -> int:
+    """Delete obsolete chunks for a source only after replacement points are indexed."""
+    source_filter = models.Filter(
+        must=[
+            models.FieldCondition(
+                key="source_url",
+                match=models.MatchValue(value=source_url),
+            )
+        ]
+    )
+    stale_ids = []
+    offset = None
+    while True:
+        records, next_offset = client.scroll(
+            collection_name=settings.QDRANT_COLLECTION,
+            scroll_filter=source_filter,
+            limit=500,
+            offset=offset,
+            with_payload=False,
+            with_vectors=False,
+        )
+        stale_ids.extend(
+            str(record.id) for record in records
+            if str(record.id) not in active_point_ids
+        )
+        if next_offset is None:
+            break
+        offset = next_offset
+
+    for start in range(0, len(stale_ids), BATCH_SIZE):
+        client.delete(
+            collection_name=settings.QDRANT_COLLECTION,
+            points_selector=models.PointIdsList(points=stale_ids[start:start + BATCH_SIZE]),
+            wait=True,
+        )
+    return len(stale_ids)
+
+
+def deactivate_removed_sitemap_urls(
+    client: QdrantClient,
+    sitemap_url: str,
+    current_urls: list[str],
+) -> int:
+    """Mark missing help-center URLs as removed and deactivate their vectors."""
+    from ingestion.manifest import load_manifest, save_manifest
+
+    sitemap_host = urlparse(sitemap_url).hostname
+    active = set(current_urls)
+    manifest = load_manifest()
+    removed_count = 0
+
+    for page_url, entry in list(manifest.items()):
+        parsed = urlparse(page_url)
+        # Restrict deletion to this help-center namespace; do not deactivate
+        # unrelated pages that may have been ingested manually.
+        if parsed.hostname != sitemap_host or not parsed.path.startswith("/support/"):
+            continue
+        if page_url in active or entry.get("status") == "removed":
+            continue
+
+        entry["status"] = "removed"
+        entry["removed_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        manifest[page_url] = entry
+        client.delete(
+            collection_name=settings.QDRANT_COLLECTION,
+            points_selector=models.FilterSelector(
+                filter=models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key="source_url",
+                            match=models.MatchValue(value=page_url),
+                        )
+                    ]
+                )
+            ),
+            wait=True,
+        )
+        removed_count += 1
+
+    if removed_count:
+        save_manifest(manifest)
+    return removed_count
 
 
 # ---------------------------------------------------------
@@ -378,11 +481,18 @@ def process_document(
 
         # 5. Index the vectors in Qdrant.
         indexed_count = upsert_points(client, points)
+        active_point_ids = {str(point.id) for point in points}
+        stale_deleted = remove_stale_chunks_for_url(
+            client,
+            document_url,
+            active_point_ids,
+        )
 
         logfire.info(
             "Indexed document",
             filename=filename,
             indexed=indexed_count,
+            stale_chunks_deleted=stale_deleted,
         )
 
         return {
@@ -416,15 +526,15 @@ def process_url(
         url=url,
         mode=resolved_mode,
     ):
+        sitemap_metadata = {}
         if resolved_mode == "sitemap":
-            urls = parse_sitemap(url)
-
-            if not urls:
+            entries = parse_sitemap_entries(url)
+            if not entries:
                 raise ValueError(f"No page URLs found in sitemap: {url}")
-
             if max_pages is not None:
-                urls = urls[:max_pages]
-
+                entries = entries[:max_pages]
+            urls = [entry["url"] for entry in entries]
+            sitemap_metadata = {entry["url"]: entry for entry in entries}
         else:
             # A direct page URL is crawled as one page.
             urls = [url]
@@ -435,11 +545,13 @@ def process_url(
             count=len(urls),
         )
 
-        crawl_articles(
+        global LAST_CRAWL_STATS
+        LAST_CRAWL_STATS = crawl_articles(
             urls=urls,
             delay=delay,
             max_images=2,
             process_images_enabled=process_images,
+            sitemap_metadata=sitemap_metadata,
         )
 
         return urls
@@ -464,19 +576,32 @@ def run_pipeline(
         "embedded": 0,
         "indexed": 0,
         "failed": 0,
+        "crawl_processed": 0,
+        "crawl_skipped": 0,
+        "crawl_failed": 0,
+        "images_processed": 0,
+        "images_failed": 0,
     }
 
     client: QdrantClient | None = None
 
     try:
         # Step 1: Crawl and save parsed JSON documents.
-        process_url(
+        selected_urls = process_url(
             url=url,
             mode=mode,
             max_pages=max_pages,
             delay=delay,
             process_images=process_images,
         )
+        resolved_mode = resolve_url_mode(url, mode)
+        for stat_key in ("processed", "skipped", "failed", "images_processed", "images_failed"):
+            LAST_CRAWL_STATS.setdefault(stat_key, 0)
+        totals["crawl_processed"] = LAST_CRAWL_STATS["processed"]
+        totals["crawl_skipped"] = LAST_CRAWL_STATS["skipped"]
+        totals["crawl_failed"] = LAST_CRAWL_STATS["failed"]
+        totals["images_processed"] = LAST_CRAWL_STATS["images_processed"]
+        totals["images_failed"] = LAST_CRAWL_STATS["images_failed"]
 
         # Step 2: Resolve the configured embedding dimension.
         dimensions = get_embedding_dim()
@@ -485,20 +610,54 @@ def run_pipeline(
         client = get_qdrant_client()
         client.get_collections()  # Connection/credentials check.
         ensure_collection(client, dimensions, recreate=wipe)
+        ensure_payload_indexes(client)
+
+        if resolved_mode == "sitemap" and max_pages is None:
+            removed = deactivate_removed_sitemap_urls(client, url, selected_urls)
+            logfire.info("Sitemap removal sync completed", removed=removed)
 
         # Step 4: Process documents already saved by the crawler.
         DOCUMENT_DIR.mkdir(parents=True, exist_ok=True)
         document_paths = sorted(DOCUMENT_DIR.glob("*.json"))
+
+        from ingestion.manifest import load_manifest
+        current_manifest = load_manifest()
+        selected_url_set = set(selected_urls)
 
         if not document_paths:
             logfire.warning(
                 "No document JSON files found",
                 directory=str(DOCUMENT_DIR),
             )
+            totals["elapsed_seconds"] = round(time.perf_counter() - started, 2)
+            if totals["crawl_failed"]:
+                raise RuntimeError(
+                    f"No documents were available and {totals['crawl_failed']} pages failed. "
+                    "Review the manifest and retry."
+                )
             return totals
 
         for document_path in document_paths:
             try:
+                # Keep archived JSON for auditability, but never re-index removed pages.
+                with document_path.open("r", encoding="utf-8") as source_file:
+                    saved_document = json.load(source_file)
+                saved_url = saved_document.get("url", "")
+                # A limited smoke test or direct-page run should not unexpectedly
+                # embed every historical JSON file in the documents directory.
+                if (max_pages is not None or resolved_mode == "page") and saved_url not in selected_url_set:
+                    continue
+                manifest_entry = current_manifest.get(saved_url, {})
+                if manifest_entry.get("status") == "removed":
+                    continue
+                if (
+                    not wipe
+                    and manifest_entry.get("status") == "processed"
+                    and manifest_entry.get("content_hash")
+                    and manifest_entry.get("indexed_content_hash") == manifest_entry.get("content_hash")
+                ):
+                    continue
+
                 result = process_document(
                     client=client,
                     document_path=document_path,
@@ -508,6 +667,14 @@ def run_pipeline(
                 totals["documents"] += 1
                 for key in ("chunks", "embedded", "indexed"):
                     totals[key] += result[key]
+
+                if saved_url in current_manifest:
+                    current_manifest[saved_url]["indexed_content_hash"] = current_manifest[saved_url].get("content_hash")
+                    current_manifest[saved_url]["indexed_at"] = time.strftime(
+                        "%Y-%m-%dT%H:%M:%SZ", time.gmtime()
+                    )
+                    from ingestion.manifest import save_manifest
+                    save_manifest(current_manifest)
 
             except Exception:
                 totals["failed"] += 1
@@ -522,10 +689,11 @@ def run_pipeline(
 
         logfire.info("Pipeline finished", **totals)
 
-        if totals["failed"]:
+        if totals["failed"] or totals["crawl_failed"]:
             raise RuntimeError(
-                f"Pipeline finished with {totals['failed']} failed documents. "
-                "Review the Logfire errors."
+                f"Pipeline incomplete: {totals['crawl_failed']} crawl failures and "
+                f"{totals['failed']} document-processing failures. "
+                "Review the manifest and Logfire errors, then rerun to resume."
             )
 
         return totals

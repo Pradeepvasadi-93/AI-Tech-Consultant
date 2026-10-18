@@ -1,0 +1,246 @@
+{
+  "evaluation_name": "Task 2 Inbox Agent rule-based classifier",
+  "dataset": "data\\eval_cases.json",
+  "case_count": 20,
+  "correct_categories": 20,
+  "incorrect_categories": 0,
+  "category_accuracy": 1.0,
+  "mean_classifier_latency_ms": 0.0202,
+  "p95_classifier_latency_ms": 0.0297,
+  "model_cost_usd": 0.0,
+  "confusion_matrix": {
+    "complaint": {
+      "complaint": 3,
+      "follow_up": 0,
+      "how_to": 0,
+      "project_request": 0,
+      "quote_request": 0,
+      "refund_cancellation": 0,
+      "troubleshooting": 0
+    },
+    "follow_up": {
+      "complaint": 0,
+      "follow_up": 2,
+      "how_to": 0,
+      "project_request": 0,
+      "quote_request": 0,
+      "refund_cancellation": 0,
+      "troubleshooting": 0
+    },
+    "how_to": {
+      "complaint": 0,
+      "follow_up": 0,
+      "how_to": 3,
+      "project_request": 0,
+      "quote_request": 0,
+      "refund_cancellation": 0,
+      "troubleshooting": 0
+    },
+    "project_request": {
+      "complaint": 0,
+      "follow_up": 0,
+      "how_to": 0,
+      "project_request": 3,
+      "quote_request": 0,
+      "refund_cancellation": 0,
+      "troubleshooting": 0
+    },
+    "quote_request": {
+      "complaint": 0,
+      "follow_up": 0,
+      "how_to": 0,
+      "project_request": 0,
+      "quote_request": 3,
+      "refund_cancellation": 0,
+      "troubleshooting": 0
+    },
+    "refund_cancellation": {
+      "complaint": 0,
+      "follow_up": 0,
+      "how_to": 0,
+      "project_request": 0,
+      "quote_request": 0,
+      "refund_cancellation": 3,
+      "troubleshooting": 0
+    },
+    "troubleshooting": {
+      "complaint": 0,
+      "follow_up": 0,
+      "how_to": 0,
+      "project_request": 0,
+      "quote_request": 0,
+      "refund_cancellation": 0,
+      "troubleshooting": 3
+    }
+  },
+  "notes": [
+    "This evaluation measures category classification only.",
+    "Risk, urgency, and human-review accuracy are not measured because the dataset does not define expected values for them.",
+    "Cost is zero for this rule-based classifier because it does not call an LLM.",
+    "Latency is local runtime and varies by machine.",
+    "These are hand-authored cases; results do not guarantee real-world accuracy.",
+    "A separate comparison using the same cases is needed to evaluate a second model or configuration."
+  ],
+  "results": [
+    {
+      "case_id": "eval_001",
+      "subject": "How do I change my website logo?",
+      "expected_category": "how_to",
+      "actual_category": "how_to",
+      "pass": true,
+      "latency_ms": 0.0696
+    },
+    {
+      "case_id": "eval_002",
+      "subject": "Checkout is failing",
+      "expected_category": "troubleshooting",
+      "actual_category": "troubleshooting",
+      "pass": true,
+      "latency_ms": 0.0272
+    },
+    {
+      "case_id": "eval_003",
+      "subject": "Change website settings",
+      "expected_category": "how_to",
+      "actual_category": "how_to",
+      "pass": true,
+      "latency_ms": 0.0279
+    },
+    {
+      "case_id": "eval_004",
+      "subject": "Update contact information",
+      "expected_category": "how_to",
+      "actual_category": "how_to",
+      "pass": true,
+      "latency_ms": 0.0297
+    },
+    {
+      "case_id": "eval_005",
+      "subject": "Website returns an error",
+      "expected_category": "troubleshooting",
+      "actual_category": "troubleshooting",
+      "pass": true,
+      "latency_ms": 0.0235
+    },
+    {
+      "case_id": "eval_006",
+      "subject": "Payment integration stopped working",
+      "expected_category": "troubleshooting",
+      "actual_category": "troubleshooting",
+      "pass": true,
+      "latency_ms": 0.0245
+    },
+    {
+      "case_id": "eval_007",
+      "subject": "Request a booking feature",
+      "expected_category": "project_request",
+      "actual_category": "project_request",
+      "pass": true,
+      "latency_ms": 0.0207
+    },
+    {
+      "case_id": "eval_008",
+      "subject": "Add a customer dashboard",
+      "expected_category": "project_request",
+      "actual_category": "project_request",
+      "pass": true,
+      "latency_ms": 0.0152
+    },
+    {
+      "case_id": "eval_009",
+      "subject": "Integrate an external calendar",
+      "expected_category": "project_request",
+      "actual_category": "project_request",
+      "pass": true,
+      "latency_ms": 0.0172
+    },
+    {
+      "case_id": "eval_010",
+      "subject": "Cancel subscription and request refund",
+      "expected_category": "refund_cancellation",
+      "actual_category": "refund_cancellation",
+      "pass": true,
+      "latency_ms": 0.0082
+    },
+    {
+      "case_id": "eval_011",
+      "subject": "Refund for last invoice",
+      "expected_category": "refund_cancellation",
+      "actual_category": "refund_cancellation",
+      "pass": true,
+      "latency_ms": 0.0094
+    },
+    {
+      "case_id": "eval_012",
+      "subject": "Please cancel my plan",
+      "expected_category": "refund_cancellation",
+      "actual_category": "refund_cancellation",
+      "pass": true,
+      "latency_ms": 0.0087
+    },
+    {
+      "case_id": "eval_013",
+      "subject": "Disappointed with customer support",
+      "expected_category": "complaint",
+      "actual_category": "complaint",
+      "pass": true,
+      "latency_ms": 0.0114
+    },
+    {
+      "case_id": "eval_014",
+      "subject": "Website broke after an update",
+      "expected_category": "complaint",
+      "actual_category": "complaint",
+      "pass": true,
+      "latency_ms": 0.0118
+    },
+    {
+      "case_id": "eval_015",
+      "subject": "Formal complaint about service",
+      "expected_category": "complaint",
+      "actual_category": "complaint",
+      "pass": true,
+      "latency_ms": 0.0095
+    },
+    {
+      "case_id": "eval_016",
+      "subject": "Quote for website customization",
+      "expected_category": "quote_request",
+      "actual_category": "quote_request",
+      "pass": true,
+      "latency_ms": 0.0109
+    },
+    {
+      "case_id": "eval_017",
+      "subject": "Estimate for website redesign",
+      "expected_category": "quote_request",
+      "actual_category": "quote_request",
+      "pass": true,
+      "latency_ms": 0.0151
+    },
+    {
+      "case_id": "eval_018",
+      "subject": "Pricing for custom integration",
+      "expected_category": "quote_request",
+      "actual_category": "quote_request",
+      "pass": true,
+      "latency_ms": 0.0124
+    },
+    {
+      "case_id": "eval_019",
+      "subject": "Following up on support request",
+      "expected_category": "follow_up",
+      "actual_category": "follow_up",
+      "pass": true,
+      "latency_ms": 0.025
+    },
+    {
+      "case_id": "eval_020",
+      "subject": "Checking status of my request",
+      "expected_category": "follow_up",
+      "actual_category": "follow_up",
+      "pass": true,
+      "latency_ms": 0.0261
+    }
+  ]
+}

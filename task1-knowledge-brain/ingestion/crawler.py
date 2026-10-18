@@ -29,6 +29,46 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+
+
+def fetch_with_retries(session, url: str, headers: dict, attempts: int = 3):
+    """Retry transient network, rate-limit and server errors with backoff."""
+    last_error = None
+    for attempt_index in range(attempts):
+        response = None
+        try:
+            response = session.get(
+                url,
+                timeout=REQUEST_TIMEOUT,
+                allow_redirects=False,
+                headers=headers,
+            )
+            if response.status_code == 304:
+                return response
+            if response.status_code == 429 or response.status_code >= 500:
+                if attempt_index < attempts - 1:
+                    retry_after = response.headers.get("Retry-After")
+                    try:
+                        wait_seconds = float(retry_after) if retry_after else 2 ** attempt_index
+                    except ValueError:
+                        wait_seconds = 2 ** attempt_index
+                    response.close()
+                    time.sleep(min(max(wait_seconds, 1), 30))
+                    continue
+            return response
+        except requests.RequestException as exc:
+            last_error = exc
+            if response is not None:
+                response.close()
+            if attempt_index >= attempts - 1:
+                raise
+            time.sleep(2 ** attempt_index)
+
+    if last_error:
+        raise last_error
+    raise RuntimeError(f"Could not fetch {url} after {attempts} attempts")
+
+
 def get_document_path(url: str) -> Path:
     """Generate a stable filename for each webpage."""
     url_hash = hashlib.sha256(url.encode("utf-8")).hexdigest()
@@ -184,6 +224,7 @@ def crawl_articles(
     delay: float = 2,
     max_images: int = MAX_IMAGES_PER_PAGE,
     process_images_enabled: bool = True,
+    sitemap_metadata: dict[str, dict] | None = None,
 ) -> dict:
     """
     Crawl pages, extract text and images, save documents,
@@ -206,14 +247,8 @@ def crawl_articles(
             existing = manifest.get(url, {})
             document_path = get_document_path(url)
 
-            # Skip only if the manifest and saved document agree.
-            if (
-                existing.get("status") == "processed"
-                and document_path.is_file()
-            ):
-                stats["skipped"] += 1
-                continue
-
+            # A processed page is not automatically unchanged. Check it again
+            # using conditional HTTP headers/content hashes so daily runs detect updates.
             attempt = existing.get("attempts", 0) + 1
             last_attempt = utc_now()
 
@@ -222,6 +257,7 @@ def crawl_articles(
                 "status": "processing",
                 "attempts": attempt,
                 "last_attempt": last_attempt,
+                "sitemap_lastmod": (sitemap_metadata or {}).get(url, {}).get("lastmod", existing.get("sitemap_lastmod")),
             }
 
             # Save the checkpoint before starting the crawl.
@@ -242,11 +278,29 @@ def crawl_articles(
                         raise ValueError("Invalid webpage URL")
 
                     # Avoid silently following redirects.
-                    response = session.get(
-                        url,
-                        timeout=REQUEST_TIMEOUT,
-                        allow_redirects=False,
+                    conditional_headers = {}
+                    retry_failed_images = (
+                        process_images_enabled and existing.get("failed_images", 0) > 0
                     )
+                    if not retry_failed_images:
+                        if existing.get("etag"):
+                            conditional_headers["If-None-Match"] = existing["etag"]
+                        if existing.get("http_last_modified"):
+                            conditional_headers["If-Modified-Since"] = existing["http_last_modified"]
+
+                    response = fetch_with_retries(session, url, conditional_headers)
+
+                    if response.status_code == 304 and document_path.is_file():
+                        manifest[url] = {
+                            **existing,
+                            "status": "processed",
+                            "last_checked": utc_now(),
+                            "attempts": attempt,
+                            "last_attempt": last_attempt,
+                        }
+                        stats["skipped"] += 1
+                        continue
+
                     response.raise_for_status()
 
                     content_type = response.headers.get(
@@ -260,7 +314,34 @@ def crawl_articles(
                         )
 
                     html = response.text
+                    content_hash = hashlib.sha256(
+                        response.content or html.encode("utf-8")
+                    ).hexdigest()
 
+                    # If validators are unavailable, compare the response body.
+                    # This catches changed pages without rewriting documents unnecessarily.
+                    if (
+                        existing.get("status") == "processed"
+                        and existing.get("content_hash") == content_hash
+                        and document_path.is_file()
+                        and not retry_failed_images
+                    ):
+                        manifest[url] = {
+                            **existing,
+                            "status": "processed",
+                            "last_checked": utc_now(),
+                            "etag": response.headers.get("ETag", existing.get("etag")),
+                            "http_last_modified": response.headers.get(
+                                "Last-Modified", existing.get("http_last_modified")
+                            ),
+                            "attempts": attempt,
+                            "last_attempt": last_attempt,
+                        }
+                        stats["skipped"] += 1
+                        continue
+
+                    page_soup = BeautifulSoup(html, "html.parser")
+                    title = page_soup.title.get_text(" ", strip=True) if page_soup.title else ""
                     # Extract the webpage text.
                     text = parse_html(html)
 
@@ -283,8 +364,11 @@ def crawl_articles(
 
                     document = {
                         "url": url,
+                        "title": title,
                         "text": text,
                         "images": images,
+                        "content_hash": content_hash,
+                        "http_last_modified": response.headers.get("Last-Modified"),
                         "ingested_at": ingested_at,
                         "character_count": len(text),
                         "image_count": len(images),
@@ -308,7 +392,13 @@ def crawl_articles(
                         "attempts": attempt,
                         "last_attempt": last_attempt,
                         "last_ingested": ingested_at,
+                        "last_checked": ingested_at,
                         "document_path": str(saved_path),
+                        "title": title,
+                        "content_hash": content_hash,
+                        "sitemap_lastmod": (sitemap_metadata or {}).get(url, {}).get("lastmod", existing.get("sitemap_lastmod")),
+                        "etag": response.headers.get("ETag"),
+                        "http_last_modified": response.headers.get("Last-Modified"),
                         "character_count": len(text),
                         "image_count": len(images),
                         "processed_images": successful_images,
