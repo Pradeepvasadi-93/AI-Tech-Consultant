@@ -12,3 +12,7 @@ TASK1_API_KEY = os.getenv("TASK1_API_KEY", "")
 DATABASE_PATH = os.getenv("DATABASE_PATH", str(ROOT / "data" / "meeting_to_scope.db"))
 HOURLY_RATE = float(os.getenv("HOURLY_RATE", "0") or 0)
 CURRENCY = os.getenv("CURRENCY", "USD")
+
+LOGFIRE_TOKEN = os.getenv("LOGFIRE_TOKEN", "").strip()
+LOGFIRE_SERVICE_NAME = os.getenv("LOGFIRE_SERVICE_NAME", "task3-meeting-to-scope")
+LOGFIRE_CONSOLE = os.getenv("LOGFIRE_CONSOLE", "true").strip().lower() in {"1", "true", "yes", "on"}

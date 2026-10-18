@@ -3,19 +3,21 @@ from fastapi import FastAPI, HTTPException
 from app import db
 from app.schemas import ProjectCreate, Approval, FollowUp, SimulatedSend
 from app.agents import generate_package, compare_requirements
+from app.observability import configure_observability, instrument_fastapi
 
-app=FastAPI(title="Task 3 — Meeting-to-Scope",version="1.0.0",
+configure_observability()
+
+app=FastAPI(title="Task 3 — Meeting-to-Scope",version="1.1.0",
  description="Meeting transcript to scope, estimates and proposal; follow-up change detection against approved baseline.")
+instrument_fastapi(app)
 
 @app.on_event("startup")
 def startup(): db.init_db()
 
 @app.get("/")
-def root(): 
-    return {"service":"task3-meeting-to-scope","status":"ready","proposal_delivery":"simulated_only"}
+def root(): return {"service":"task3-meeting-to-scope","status":"ready","proposal_delivery":"simulated_only"}
 @app.get("/health")
-def health(): 
-    return {"status":"ok","service":"task3-meeting-to-scope"}
+def health(): return {"status":"ok","service":"task3-meeting-to-scope"}
 
 def build_or_fail(client,project,transcript):
     try: return generate_package(client,project,transcript)
