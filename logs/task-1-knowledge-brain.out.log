@@ -1,0 +1,6 @@
+08:52:32.195 GET /health
+INFO:     127.0.0.1:52331 - "GET /health HTTP/1.1" 200 OK
+08:52:33.256 GET /docs
+INFO:     127.0.0.1:63010 - "GET /docs HTTP/1.1" 200 OK
+08:52:33.716 GET /openapi.json
+INFO:     127.0.0.1:63010 - "GET /openapi.json HTTP/1.1" 200 OK

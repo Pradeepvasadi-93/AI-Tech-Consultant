@@ -1,0 +1,13 @@
+AI TECH CONSULTANT FRONTEND — START HERE
+
+1. Make sure the three backend services are running on ports 8000, 8001 and 8002.
+2. Open PowerShell in this folder.
+3. Run:
+     Copy-Item .env.example .env
+     npm install
+     npm run dev
+4. Open http://127.0.0.1:5173
+
+For the first run, you can double-click start_frontend.bat; it installs dependencies if node_modules is missing and starts Vite.
+
+Important: Task 2's complete API route file was not included in the source material available when this frontend was created. Check http://127.0.0.1:8001/docs and adjust VITE_TASK2_* paths in .env if needed. Task 1 and Task 3 paths were matched to the source endpoints inspected for this project.

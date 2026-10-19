@@ -1,0 +1,2 @@
+08:52:32.931 GET /health
+INFO:     127.0.0.1:52339 - "GET /health HTTP/1.1" 200 OK
